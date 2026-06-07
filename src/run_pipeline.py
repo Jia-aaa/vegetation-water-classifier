@@ -78,20 +78,22 @@ def save_prediction_raster(pred_flat, profile, shape, out_path):
         dst.set_band_description(1, "prediction (0=other, 1=veg, 2=water)")
 
 
-def save_visualization(pred_flat, labels, shape, out_path):
+def save_visualization(pred_random, pred_block, labels, shape, out_path):
     import matplotlib.pyplot as plt
     from matplotlib.colors import ListedColormap
 
-    pred_img = pred_flat.reshape(shape)
     cmap = ListedColormap(["#bdbdbd", "#2ca02c", "#1f77b4"])
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5.5))
     axes[0].imshow(labels, cmap=cmap, vmin=0, vmax=2)
-    axes[0].set_title("Ground truth labels")
+    axes[0].set_title("Ground truth")
     axes[0].axis("off")
-    im = axes[1].imshow(pred_img, cmap=cmap, vmin=0, vmax=2)
-    axes[1].set_title("RF prediction (block split)")
+    axes[1].imshow(pred_random.reshape(shape), cmap=cmap, vmin=0, vmax=2)
+    axes[1].set_title("Prediction (random split model)")
     axes[1].axis("off")
+    im = axes[2].imshow(pred_block.reshape(shape), cmap=cmap, vmin=0, vmax=2)
+    axes[2].set_title("Prediction (block split model)")
+    axes[2].axis("off")
     cbar = fig.colorbar(im, ax=axes, ticks=[0, 1, 2], shrink=0.6)
     cbar.ax.set_yticklabels(["other", "vegetation", "water"])
     fig.savefig(out_path, dpi=200, bbox_inches="tight")
@@ -127,16 +129,20 @@ def main():
     train_b, test_b = split_block(shape)
     clf_b, m_b, b_b = train_and_eval(X, y, train_b, test_b, "block split (32x32)")
 
-    pred_full = clf_b.predict(X).astype("uint8")
+    pred_full_random = clf_r.predict(X).astype("uint8")
+    pred_full_block = clf_b.predict(X).astype("uint8")
 
-    pred_path = OUTPUT_DIR / "prediction.tif"
-    save_prediction_raster(pred_full, profile, shape, pred_path)
-    print(f"\nprediction raster: {pred_path}")
+    pred_random_path = OUTPUT_DIR / "prediction_random.tif"
+    pred_spatial_path = OUTPUT_DIR / "prediction_spatial.tif"
+    save_prediction_raster(pred_full_random, profile, shape, pred_random_path)
+    save_prediction_raster(pred_full_block, profile, shape, pred_spatial_path)
+    print(f"\nprediction (random split) raster: {pred_random_path}")
+    print(f"prediction (block split) raster : {pred_spatial_path}")
 
-    vis_path = OUTPUT_DIR / "prediction_preview.png"
+    vis_path = OUTPUT_DIR / "preview.png"
     with rasterio.open("data/labels.tif") as src:
         labels_2d = src.read(1)
-    save_visualization(pred_full, labels_2d, shape, vis_path)
+    save_visualization(pred_full_random, pred_full_block, labels_2d, shape, vis_path)
     print(f"prediction preview: {vis_path}")
 
     metrics = {

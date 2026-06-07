@@ -5,6 +5,7 @@
 import numpy as np
 from sklearn.metrics import (
     accuracy_score,
+    balanced_accuracy_score,
     confusion_matrix,
     precision_recall_fscore_support,
 )
@@ -27,6 +28,7 @@ def majority_baseline(y_train, y_test):
 
 def evaluate(y_true, y_pred):
     acc = float(accuracy_score(y_true, y_pred))
+    bal_acc = float(balanced_accuracy_score(y_true, y_pred))
     cm = confusion_matrix(y_true, y_pred, labels=CLASS_LABELS)
     p, r, f1, support = precision_recall_fscore_support(
         y_true, y_pred, labels=CLASS_LABELS, zero_division=0
@@ -45,6 +47,7 @@ def evaluate(y_true, y_pred):
 
     return {
         "accuracy": acc,
+        "balanced_accuracy": bal_acc,
         "macro_f1": macro_f1,
         "confusion_matrix": cm.tolist(),
         "confusion_matrix_labels": CLASS_LABELS,
@@ -53,7 +56,7 @@ def evaluate(y_true, y_pred):
 
 
 def format_report(name, metrics, baseline=None):
-    lines = [f"=== {name} ===", f"accuracy : {metrics['accuracy']:.4f}"]
+    lines = [f"=== {name} ===", f"accuracy          : {metrics['accuracy']:.4f}"]
     if baseline is not None:
         lines.append(
             f"majority-class baseline acc: {baseline['accuracy']:.4f}  "
@@ -61,7 +64,8 @@ def format_report(name, metrics, baseline=None):
         )
         lift = metrics["accuracy"] - baseline["accuracy"]
         lines.append(f"lift over baseline: {lift:+.4f}")
-    lines.append(f"macro F1 : {metrics['macro_f1']:.4f}")
+    lines.append(f"balanced accuracy : {metrics['balanced_accuracy']:.4f}")
+    lines.append(f"macro F1          : {metrics['macro_f1']:.4f}")
     lines.append("confusion matrix (rows=true, cols=pred):")
     cm = np.array(metrics["confusion_matrix"])
     header = "              " + " ".join(f"{CLASS_NAMES[c]:>10}" for c in CLASS_LABELS)

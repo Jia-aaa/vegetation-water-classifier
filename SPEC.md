@@ -27,12 +27,12 @@
 - **模型**：`sklearn.ensemble.RandomForestClassifier`
   - 选择理由：小数据（4 万像素）下稳定、可解释、不需要调参；
     支持 `class_weight="balanced"` 直接处理类别不平衡。
-- **特征**（每像素 6 维）：
+- **特征**（每像素 7 维）：
   - 4 个原始波段：Red, NIR, Green, SWIR
-  - NDVI = (NIR − Red) / (NIR + Red)
-  - NDWI = (Green − NIR) / (Green + NIR)
-  - 加 NDVI / NDWI 是因为植被和水体在这两个指数上差异远比单波段大，
-    属于该类问题的经典做法。
+  - NDVI  = (NIR − Red) / (NIR + Red)        ——植被指数
+  - NDWI  = (Green − NIR) / (Green + NIR)    ——McFeeters 水体指数
+  - MNDWI = (Green − SWIR) / (Green + SWIR)  ——Modified NDWI，对水体识别在含建成区/阴影时更稳
+  - 加这三个指数是因为植被和水体在它们上的差异远比单波段大，是该类问题的经典做法。
 - **超参数**：`n_estimators=200, min_samples_leaf=2,
   class_weight="balanced", random_state=42`。
   不在本任务里做超参搜索（非目标）。
@@ -50,11 +50,23 @@
 
 随机种子均为 42，可复现。
 
+### 为什么 block 切分更可信（必答题）
+
+- 遥感影像具有**空间自相关**——相邻像素的反射率高度相似，因为它们大概率属于同一地物。
+- 随机按像素切分的后果：测试像素的 4-邻域里几乎一定有训练像素，
+  模型不需要"理解光谱-地物关系"也能在测试集上接近完美——它只是在做"我在训练时见过和你长得一模一样的邻居"这件事。
+- 这种 accuracy **不能外推到新影像 / 新区域**，因为模型并没有学到泛化所需的判别边界。
+- block 切分把 32×32 = 1024 个像素整体分给训练或测试，
+  保证同一个 block 不会同时出现在两边，**结构上**杜绝了空间近邻泄漏。
+  `checks/check_split_leakage.py` 用三个硬指标实证这一点。
+- 因此评估模型的真实泛化能力，**应以 block 切分为主**，random 切分仅作为对照（演示泄漏存在）。
+
 ## 评估指标
 
 任务硬性要求"不能只看 accuracy"。本工具在两种切分下都报告：
 
 - 整体 **accuracy**
+- **balanced accuracy**（每类 recall 的算术平均；类别不平衡下比 accuracy 更稳）
 - **多数类基线 accuracy**（"全猜 vegetation"）和 lift over baseline
 - **混淆矩阵**（3×3）
 - **每一类的 precision / recall / F1 + support**
@@ -68,23 +80,28 @@
 
 | 文件                              | 内容                                                              |
 | --------------------------------- | ----------------------------------------------------------------- |
-| `outputs/prediction.tif`          | 整景预测，uint8，nodata=255，CRS/transform/shape 同输入            |
-| `outputs/prediction_preview.png`  | 真值 vs 预测左右对比图                                             |
+| `outputs/prediction_random.tif`   | random 切分模型在整景上的预测（uint8，nodata=255，同地理参考）     |
+| `outputs/prediction_spatial.tif`  | block 切分模型在整景上的预测（uint8，nodata=255，同地理参考）      |
+| `outputs/preview.png`             | 真值 / random / spatial 三栏对比图                                |
 | `outputs/metrics.json`            | 类别分布 / 模型参数 / 两种切分的全部指标                           |
 | `outputs/report.txt`              | 人读的纯文本评估报告                                               |
 
 ## 验收标准（必须可执行）
 
-1. 运行 `python src/run_pipeline.py` 成功，`outputs/` 下出现 4 个文件。
-2. `prediction.tif` 的 dtype = uint8，CRS / transform / shape 与 `scene.tif` 完全一致。
+1. 运行 `python src/run_pipeline.py` 成功，`outputs/` 下出现 5 个文件。
+2. `prediction_random.tif` 和 `prediction_spatial.tif` 的 dtype = uint8，CRS / transform / shape 与 `scene.tif` 完全一致。
 3. `metrics.json` 中 `splits.random` 和 `splits.block` 两段都有
-   accuracy / confusion_matrix / per_class（含 0/1/2 三类的 precision/recall/F1）。
-4. `python checks/baseline_check.py` 输出多数类基线 ≈ 73.4%，
+   accuracy / balanced_accuracy / macro_f1 / confusion_matrix /
+   per_class（含 0/1/2 三类的 precision/recall/F1）。
+4. `python checks/check_data.py` 输入数据所有断言通过。
+5. `python checks/check_split_leakage.py` **block 切分中 train_blocks ∩ test_blocks = ∅**，
+   且打印 random / block 两种切分下 test 像素到最近 train 像素的距离分布。
+6. `python checks/baseline_check.py` 输出多数类基线 ≈ 73.4%，
    并打印两种切分相对基线的 lift。
-5. `python checks/leakage_diagnostic.py` 用单一弱特征（仅 Red）
+7. `python checks/weak_feature_diagnostic.py` 用单一弱特征（仅 Red）
    重跑两种切分；输出明确显示 water recall 远低于 overall accuracy
    （演示"高 accuracy 掩盖小类失败"）。
-6. `python checks/spatial_coherence.py` 比较 prediction 与 labels 中
+8. `python checks/spatial_coherence.py` 比较 prediction 与 labels 中
    每一类的连通组件数与碎片度（4-邻域）。
 
 ## 非目标（明确不做）

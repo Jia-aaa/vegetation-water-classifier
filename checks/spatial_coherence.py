@@ -19,7 +19,7 @@ from scipy.ndimage import label as cc_label
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PRED_PATH = ROOT / "outputs" / "prediction.tif"
+PRED_PATH = ROOT / "outputs" / "prediction_spatial.tif"
 LABELS_PATH = ROOT / "data" / "labels.tif"
 
 CLASS_NAMES = {0: "other", 1: "vegetation", 2: "water"}

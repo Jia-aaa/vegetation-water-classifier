@@ -18,157 +18,141 @@
 **多数类基线**：永远预测 `vegetation`，全图 accuracy ≈ **0.7340**。
 任何模型如果 accuracy 不能显著超过 0.73，就**没学到东西**。
 
-水体只占 1.66%，所以水体上的 recall / F1 才是这次评估的真正信号。
+水体只占 1.66%，所以**水体上的 recall / F1 才是这次评估的真正信号**。
 
-## 2. 主结果（强特征：4 波段 + NDVI + NDWI）
+## 2. 特征与模型
 
-模型：`RandomForestClassifier(n_estimators=200, min_samples_leaf=2,
-class_weight="balanced", random_state=42)`。两种切分都用同一组超参，仅切分方式变。
+| 维度 | 选择 |
+|---|---|
+| 特征（7 维） | Red, NIR, Green, SWIR, NDVI, NDWI, MNDWI |
+| 模型 | `RandomForestClassifier(n_estimators=200, min_samples_leaf=2, class_weight="balanced", random_state=42)` |
+| 选模型理由 | 小数据（4 万像素）下稳定、可解释、不需调参；`class_weight="balanced"` 直接处理类别不平衡 |
 
-### 2.1 Random split（像素 60/40 随机）
+加 NDVI / NDWI / MNDWI 是因为植被和水体在它们上的差异远比单波段大，
+是该类问题的经典做法。MNDWI 用 SWIR 替代 NIR，在含建成区/阴影的影像上对水体识别更稳。
 
-```
-accuracy : 1.0000
-majority-class baseline acc: 0.7378  (class 1 = vegetation)
-lift over baseline: +0.2622
-macro F1 : 1.0000
-confusion matrix (rows=true, cols=pred):
-                   other vegetation      water
-  other             3914          0          0
-  vegetation           0      11804          0
-  water                0          0        282
-per-class precision / recall / F1:
-  other       P=1.0000  R=1.0000  F1=1.0000  n=3914
-  vegetation  P=1.0000  R=1.0000  F1=1.0000  n=11804
-  water       P=1.0000  R=1.0000  F1=1.0000  n=282
-```
+## 3. 数据泄漏诊断（任务最关键的一节）
 
-### 2.2 Block split（32×32 棋盘格区块 60/40）
+### 3.1 切分方法学是否成立（结构层面）
+
+`python checks/check_split_leakage.py` 用三个硬指标实证两种切分的空间分离程度：
 
 ```
-accuracy : 1.0000
-majority-class baseline acc: 0.7170  (class 1 = vegetation)
-lift over baseline: +0.2830
-macro F1 : 1.0000
-confusion matrix (rows=true, cols=pred):
-                   other vegetation      water
-  other             4099          0          0
-  vegetation           0      10692          0
-  water                0          0        121
-per-class precision / recall / F1:
-  other       P=1.0000  R=1.0000  F1=1.0000  n=4099
-  vegetation  P=1.0000  R=1.0000  F1=1.0000  n=10692
-  water       P=1.0000  R=1.0000  F1=1.0000  n=121
+=== Block disjointness (block split) ===
+  unique train blocks : 29
+  unique test  blocks : 20
+  overlap             : 0
+  OK: train_blocks AND test_blocks are disjoint (intersection is empty)
+
+=== Pixel overlap (sanity) ===
+  random split: |train AND test| = 0 pixels
+  block  split: |train AND test| = 0 pixels
+
+=== Distance from test pixel to nearest train pixel ===
+                          min   median  mean   max  frac<=1px
+  random split            1.00   1.00   1.01  2.00   97.28%
+  block split (32x32)     1.00   8.00   9.71 40.00    7.68%
 ```
 
-### 2.3 解读
+解读：
 
-两种切分下都是 1.0000。**这不是 bug，是事实**：
+- **block 切分结构上不可能泄漏**：训练用的 block 集合和测试用的 block 集合零交集，
+  测试像素到最近训练像素的中位距离是 8 px，仅 7.68% 的测试像素在 1 px 邻域内（仅出现在 block 边界上）。
+- **random 切分结构上一定泄漏**：**97.28% 的测试像素的 4-邻域里就有训练像素**——
+  模型甚至不需要"理解光谱"，只要复制隔壁邻居的标签就能拿到接近完美的分数。
+- 这是任务问的 "你怎么保证测试集没在偷看训练集" 的硬证据。
 
-- 这景影像在 4 波段 + NDVI + NDWI 的 6 维特征空间里，
-  3 个类别完全可分。混淆矩阵的非对角线全 0 直接证明这一点。
-- **所以仅看主结果，无法验证我们的 block 切分是否切断了空间相邻**——
-  天花板被特征强度盖住了。
-- 这恰好暴露了一个评估学生的真实陷阱：**如果你只跑这一组数字就交了，
-  你就没办法回答"你怎么保证测试集没在偷看训练集"这个问题**。
+### 3.2 在本数据集上两种切分的 accuracy 对比（结果层面）
 
-为此我们用一个**降级实验**来真正回答任务的第 4 条诘问——见下一节。
+主流水线（7 维强特征）下的实际结果：
 
-## 3. 数据泄漏诊断（弱特征对照）
+| 切分方式 | accuracy | balanced acc | macro F1 | water P / R / F1 | 多数类基线 | lift |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **Random split** | 1.0000 | 1.0000 | 1.0000 | 1.000 / 1.000 / 1.000 (n=282) | 0.7378 | +0.2622 |
+| **Block split**  | 1.0000 | 1.0000 | 1.0000 | 1.000 / 1.000 / 1.000 (n=121) | 0.7170 | +0.2830 |
 
-> 任务原文：「问自己：换一种按空间区块切分的方式，准确率会不会掉下来？
-> 去试，把两种切分的结果都报出来。」
->
-> 问题是：在强特征下两种切分都顶到 1.0，没有可观察的差距。
-> 我们因此故意把模型弱化，**只用 1 个特征（Red）** 重跑，
-> 让模型必须依赖"邻居像素长得像"来作弊（如果切分允许的话）。
+两种切分都到 1.0。**这不是 bug，是事实**：
 
-`python checks/leakage_diagnostic.py` 的输出：
+- 这景影像在 7 维特征空间里 3 类**完全可分**（混淆矩阵的非对角线全 0 直接证明）。
+- 既然不需要利用空间近邻就能完美分类，random 切分的"潜在泄漏"在这景上没有可观察的影响。
+- **结构上**它仍然在泄漏（见 3.1 的 97.28%），只是被特征强度盖住了。
 
-```
-=== Weak feats + Random split ===
-accuracy : 0.9176
-majority-class baseline acc: 0.7378
-lift over baseline: +0.1799
-macro F1 : 0.6569
-per-class precision / recall / F1:
-  other       P=0.9906  R=0.9962  F1=0.9934  n=3914
-  vegetation  P=0.9753  R=0.9116  F1=0.9424  n=11804
-  water       P=0.0223  R=0.0816  F1=0.0350  n=282
+如果只看 3.2 这张表，会以为"切分方式不重要"——这是错的，3.1 已经证明 random 切分**结构上不可信**。
+**无论 3.2 看到不到 gap，结论都应该以 block 切分的数字为准**，random 仅作为对照。
 
-=== Weak feats + Block split (32x32) ===
-accuracy : 0.9125
-majority-class baseline acc: 0.7170
-lift over baseline: +0.1955
-macro F1 : 0.6492
-per-class precision / recall / F1:
-  other       P=0.9912  R=0.9939  F1=0.9926  n=4099
-  vegetation  P=0.9870  R=0.8905  F1=0.9363  n=10692
-  water       P=0.0104  R=0.0992  F1=0.0188  n=121
+### 3.3 在弱特征下两种切分都暴露了"高 acc 假象"
 
-random_acc - block_acc = +0.0051
-```
+`python checks/weak_feature_diagnostic.py`：故意把模型弱化到只用 1 个特征（Red），
+让小类失败暴露：
 
-### 解读（这部分是任务的核心）
+| 切分方式 | accuracy | balanced acc | macro F1 | water P / R / F1 |
+| --- | ---: | ---: | ---: | ---: |
+| Weak + Random | 0.9176 | 0.6631 | 0.6569 | **0.022 / 0.082 / 0.035** (n=282) |
+| Weak + Block  | 0.9125 | 0.6612 | 0.6492 | **0.010 / 0.099 / 0.019** (n=121) |
 
-在弱特征下：
+解读（**这正是任务结尾那句话的活例子**）：
 
-- 两种切分的 accuracy 都在 91% 上下。**这正是任务结尾那句话的活例子**：
-  > 一个准确率 91% 的模型，可能其实毫无用处。
-- 因为：**water recall 在两种切分下都只有 8–10%**——
-  663 像素的水体，295 个测试样本里只有十几二十个被正确认出来。
-  整体准确率被多数类（vegetation 73%）和容易区分的 other 抬高，
-  把水体的彻底失败完全藏起来了。
-- 这就是任务文档第 3 条最重要的那一关：
-  **"先算多数类基线" + "看每一类的 precision/recall"** 这两步，
-  在弱特征实验里立刻揭穿了 91% accuracy 的虚假信号；
-  如果只看 accuracy，会以为模型不错。
+- 两种切分的 **accuracy 都 91% 上下**，看起来"还不错"。
+- 但 **water recall ≈ 8–10%**，**water F1 ≈ 0.02–0.04**——663 像素的水体，模型几乎全没认出来。
+- accuracy 被多数类（vegetation 73%）+ other（25%）抬起来，把水体的彻底失败完全藏起来。
+- **balanced accuracy 只有 0.66**，**macro F1 只有 0.65**——这两个指标立刻揭穿了 91% 的假象。
 
-关于 random vs block 的差距：
+→ **这就是为什么不能只看 accuracy**：必须看 balanced accuracy + macro F1 + per-class recall。
 
-- `random_acc - block_acc = +0.0051`，差距很小。
-- 这不是 block 切分失效——`splits.split_block` 确实把同一个区块的所有像素
-  整体分给训练或测试（构造方法和单元逻辑可以直接读 `src/splits.py` 验证）。
-- 在这景 200×200 的影像上，类别分布相对交错（other 有 4 个连通块、
-  water 一整片），且只用 1 个波段时模型已经被信息量限制住了，
-  因此空间相邻带来的额外泄漏量级有限。
-- 真要观察到大的 random/block gap，通常需要更大尺度、更纯单类区块的影像，
-  或更强依赖局部上下文的模型（CNN）。这超出本任务的特征/模型范围。
+### 3.4 random vs block 在本数据集的 accuracy 差距很小，原因
 
-**结论**：block 切分方法学是对的，但本数据集上**它带来的差距不显著**，
-而**多数类基线 + per-class recall** 这两件武器在这次评估中起决定作用。
+弱特征实验里 `random_acc - block_acc = +0.0051`，差距小。两个原因：
 
-## 4. 空间合理性
+1. 200×200 影像偏小，地物分布相对交错（other 散布、vegetation 几乎单连通），
+   block 切分的训练块和测试块仍然看到了相似的光谱分布；
+2. 弱特征下模型已经被信息量限制，能榨取的"邻居作弊"红利有限。
 
-`python checks/spatial_coherence.py` 的输出：
+要观察到大 random/block gap，通常需要**更大尺度、更纯单类块的影像，或更依赖局部上下文的模型（CNN）**。
+但**这不影响结论**——3.1 证明了结构上 random 切分必然泄漏，
+所以即使 accuracy 没变化，**也应当采用 block 切分作为可信评估**。
+
+## 4. 多数类基线对比
+
+| 切分方式 | 模型 accuracy | 多数类基线 | lift | 通过验收？ |
+| --- | ---: | ---: | ---: | :---: |
+| Random | 1.0000 | 0.7378 | +0.2622 | ✓ 显著超过基线 |
+| Block  | 1.0000 | 0.7170 | +0.2830 | ✓ 显著超过基线 |
+
+模型在 block 切分下 lift +28 个百分点，确实学到了东西（不是全猜多数类）。
+
+## 5. 空间合理性
+
+`python checks/spatial_coherence.py` 量化对比 prediction 和 truth 的空间结构：
 
 ```
-=== Spatial coherence (4-connectivity) ===
 class         truth_px  truth_cc  truth_frag   pred_px   pred_cc   pred_frag
 other             9976         4      0.0004      9976         4      0.0004
 vegetation       29361         1      0.0000     29361         1      0.0000
 water              663         1      0.0015       663         1      0.0015
 ```
 
-`pred_frag` 与 `truth_frag` 完全一致，没有椒盐噪声，水体在预测中保持
-单一连通块，形状与真值一致。`outputs/prediction_preview.png` 可作肉眼验证。
+- 每一类的连通组件数（cc）和碎片度（frag）与真值完全一致
+- 水体保持单一连通块，没有椒盐噪声
+- `outputs/preview.png` 提供肉眼三栏对比（truth / random / spatial）
 
-## 5. 验收对照表
+## 6. 验收对照
 
-| SPEC 标准 | 检查脚本 / 文件                        | 结果 |
-| --------- | -------------------------------------- | ---- |
-| 1         | `python src/run_pipeline.py`            | PASS（4 个产物均生成） |
-| 2         | `prediction.tif` dtype/CRS/transform/shape | PASS（uint8, EPSG:32650, 200×200） |
-| 3         | `outputs/metrics.json`                  | PASS（两种切分各项指标齐全） |
-| 4         | `python checks/baseline_check.py`       | PASS（基线 0.7340，lift +0.26） |
-| 5         | `python checks/leakage_diagnostic.py`   | PASS（弱特征下 water R≈0.08，演示"高 acc 掩盖小类"） |
-| 6         | `python checks/spatial_coherence.py`    | PASS（pred 与 truth 同碎片度） |
+| SPEC 标准 | 检查脚本 / 文件 | 结果 |
+| --- | --- | --- |
+| 1 | `python src/run_pipeline.py` | PASS（5 个产物均生成） |
+| 2 | `prediction_*.tif` dtype/CRS/transform/shape | PASS（uint8, EPSG:32650, 200×200） |
+| 3 | `outputs/metrics.json` | PASS（accuracy / balanced_accuracy / macro_f1 / cm / per_class 齐全） |
+| 4 | `python checks/check_data.py` | PASS（输入 sanity 全通过） |
+| 5 | `python checks/check_split_leakage.py` | PASS（block 切分 0 重叠，median 距离 8 px） |
+| 6 | `python checks/baseline_check.py` | PASS（基线 0.7340，lift +0.26） |
+| 7 | `python checks/weak_feature_diagnostic.py` | PASS（弱特征下 water R≈0.08，演示"高 acc 掩盖小类"） |
+| 8 | `python checks/spatial_coherence.py` | PASS（pred 与 truth 同碎片度） |
 
-## 6. 一句话答辩
+## 7. 一句话答辩
 
-> 准确率 99% 的模型仍然可能毫无用处，
-> 因为它的"99%"是把多数类做对刷出来的，
-> 而你真正想抓的少数类（这里是水体），
-> 它的 recall 可能只有个位数百分点。
-> 评估时必须看 per-class recall + macro F1 + 多数类基线，
-> 三者一起才能说清楚一个模型可不可信。
+一个 accuracy 99% 的模型可能毫无用处：
+（a）遥感影像相邻像素高度相似——在本数据集 random 切分下 **97.28% 的测试像素紧挨训练像素**——
+模型只是在"识别近邻"而非泛化；
+（b）多数类占比可能极高，全猜 vegetation 也能拿到 73% accuracy，
+弱特征下水体 recall 只有 8% 也能撑起 91% 的总体 accuracy。
+判断模型是否可信，必须**同时看**：block 切分下的混淆矩阵 + 每一类的 precision/recall + balanced accuracy + 多数类基线 lift——缺一不可。

@@ -16,7 +16,7 @@ SCENE_PATH = Path("data/scene.tif")
 LABELS_PATH = Path("data/labels.tif")
 
 
-FEATURE_NAMES = ["Red", "NIR", "Green", "SWIR", "NDVI", "NDWI"]
+FEATURE_NAMES = ["Red", "NIR", "Green", "SWIR", "NDVI", "NDWI", "MNDWI"]
 
 
 def safe_div(num, den):
@@ -34,8 +34,9 @@ def build_features(scene):
 
     ndvi = safe_div(nir - red, nir + red)
     ndwi = safe_div(green - nir, green + nir)
+    mndwi = safe_div(green - swir, green + swir)
 
-    stack = np.stack([red, nir, green, swir, ndvi, ndwi], axis=0)
+    stack = np.stack([red, nir, green, swir, ndvi, ndwi, mndwi], axis=0)
     return stack
 
 
