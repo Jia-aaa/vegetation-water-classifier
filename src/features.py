@@ -12,8 +12,9 @@ import numpy as np
 import rasterio
 
 
-SCENE_PATH = Path("data/scene.tif")
-LABELS_PATH = Path("data/labels.tif")
+ROOT = Path(__file__).resolve().parents[1]
+SCENE_PATH = ROOT / "data" / "scene.tif"
+LABELS_PATH = ROOT / "data" / "labels.tif"
 
 
 FEATURE_NAMES = ["Red", "NIR", "Green", "SWIR", "NDVI", "NDWI", "MNDWI"]

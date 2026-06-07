@@ -5,7 +5,6 @@
 import numpy as np
 from sklearn.metrics import (
     accuracy_score,
-    balanced_accuracy_score,
     confusion_matrix,
     precision_recall_fscore_support,
 )
@@ -28,12 +27,12 @@ def majority_baseline(y_train, y_test):
 
 def evaluate(y_true, y_pred):
     acc = float(accuracy_score(y_true, y_pred))
-    bal_acc = float(balanced_accuracy_score(y_true, y_pred))
     cm = confusion_matrix(y_true, y_pred, labels=CLASS_LABELS)
     p, r, f1, support = precision_recall_fscore_support(
         y_true, y_pred, labels=CLASS_LABELS, zero_division=0
     )
     macro_f1 = float(np.mean(f1))
+    bal_acc = float(np.mean(r))
 
     per_class = {}
     for i, c in enumerate(CLASS_LABELS):
