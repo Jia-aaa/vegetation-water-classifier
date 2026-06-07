@@ -4,6 +4,27 @@
 训练一个像素级的随机森林分类器（`0=其他 / 1=植被 / 2=水体`），
 并提供严格的评估，避免被准确率欺骗。
 
+---
+
+## 📦 交付清单（任务第三步）
+
+> 任务原文："交规格、代码、以及一份**评估报告**：多数类基线、混淆矩阵、各类 precision/recall、两种切分方式下的准确率对比。导师会重点和你讨论第 3 条。"
+
+| # | 任务要的东西 | 在仓库里的位置 |
+|---|---|---|
+| 1 | **规格** | [`SPEC.md`](SPEC.md) |
+| 2 | **代码** | [`src/`](src/) — 主流水线 `src/run_pipeline.py`；[`checks/`](checks/) — 5 个独立自检脚本 |
+| 3 | **评估报告**（多数类基线 / 混淆矩阵 / 每类 P/R / 两种切分对比） | [`EVALUATION.md`](EVALUATION.md) — **导师重点看第 3 节"数据泄漏诊断"** |
+| 4 | 一句话答辩（"为什么 99% 准确率可能毫无用处"） | [`EVALUATION.md` 第 7 节](EVALUATION.md#7-一句话答辩) / 本 README 末尾 |
+
+补充材料（不在任务点名清单内，但有助于答辩）：
+
+- [`TASK_COMPLIANCE.md`](TASK_COMPLIANCE.md) — 逐条任务要求 → 仓库实现的对照表
+- [`outputs/metrics.json`](outputs/) / `outputs/report.txt` — 流水线产生的机器可读 / 人读指标
+- [`outputs/preview.png`](outputs/) — 真值 / random / spatial 三栏可视化对比
+
+---
+
 ## 任务重点
 
 本项目不追求"高 accuracy"——追求的是**当你看不出对错时，怎么判断模型可不可信**。
