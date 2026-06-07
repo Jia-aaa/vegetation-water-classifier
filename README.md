@@ -11,8 +11,8 @@
 遥感影像相邻像素高度相似（空间自相关），随机按像素切训练 / 测试会让测试集
 紧贴训练集，accuracy 看起来很漂亮但模型没真正泛化。所以本项目同时跑两种切分：
 
-1. **随机像素切分**——作为**对照**，演示泄漏的存在
-2. **空间区块切分（32×32 棋盘格）**——作为**更可信**的泛化评估
+1. **随机像素切分**——作为**对照**，用于暴露随机切分下的潜在空间近邻泄漏风险
+2. **空间区块切分（32×32 block split）**——保证同一空间块不会同时进入训练集和测试集，作为**更可信**的泛化评估
 
 最终结论以 block 切分 + 多数类基线 + per-class recall 共同判断。
 完整评估见 [`EVALUATION.md`](EVALUATION.md)，任务对齐表见 [`TASK_COMPLIANCE.md`](TASK_COMPLIANCE.md)。
@@ -44,7 +44,7 @@ python src/run_pipeline.py
 流水线会：
 
 1. 读 `data/scene.tif` + `data/labels.tif`，构造 7 维特征（4 波段 + NDVI + NDWI + MNDWI）
-2. 用两种切分（random 像素 60/40，block 32×32 棋盘格 60/40）分别训练同一个 RF
+2. 用两种切分（random 像素 60/40，block 32×32 区块 60/40）分别训练同一个 RF
 3. 在测试集上算 accuracy / balanced_accuracy / macro_F1 / 混淆矩阵 / per-class P/R/F1
 4. 用两个模型分别给整景做预测，存成 `prediction_random.tif` / `prediction_spatial.tif` + 三栏 preview
 5. 把指标写到 `outputs/metrics.json` 和 `outputs/report.txt`

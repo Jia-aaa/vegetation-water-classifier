@@ -8,10 +8,12 @@
      （证明它真的是 block 级切分，不是把同一个 block 的像素再随机分）
 
   2. random 切分：测量 test 像素到最近 train 像素的 4-邻域距离分布
-     （≤1 表示测试像素紧贴训练像素，是空间泄漏的根源）
+     （≤1 表示测试像素紧贴训练像素，是空间近邻泄漏的根源）
 
-  3. block 切分：同样测量 test 像素到最近 train 像素的距离分布
-     （应该 ≥ 1，理想情况是大多数 ≥ block_size 的一半）
+  3. block 切分：同样测量距离分布
+     （block split 只保证同一 block 不同时进入 train/test；
+      相邻 block 一个分到 train、一个分到 test 时，边界两侧像素仍可能挨着，
+      所以这个分布是**残余近邻风险**的量化，而非"完全分离"的证明）
 
 结果以表格形式打印；如果 block 切分发现任何 block 同时出现在
 train 与 test 中，直接报错退出。
@@ -123,11 +125,12 @@ def main():
     )
     print(
         f"  block  split: {frac_close_block*100:.2f}% of test pixels have a "
-        f"train pixel within 1 px -- these are only at block boundaries."
+        f"train pixel within 1 px -- residual near-neighbour risk at block boundaries."
     )
     print(
-        "  => block split is structurally honest; random split lets the model "
-        "exploit spatial autocorrelation."
+        "  => block split avoids same-block leakage and substantially reduces "
+        "the near-neighbour leakage of random split, but it does not fully "
+        "eliminate spatial autocorrelation."
     )
 
 

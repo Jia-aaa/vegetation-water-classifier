@@ -1,7 +1,9 @@
 """
 两种切分方式：
-  - random:  按像素随机 60/40 (注意：可能数据泄漏)
-  - block :  按空间棋盘格区块 (32x32) 切，相邻像素不会跨切分
+  - random:  按像素随机 60/40
+             (每个测试像素的邻居极可能在训练集 -> 空间近邻泄漏)
+  - block :  把 (H, W) 切成 32x32 的网格，按 block 整体 60/40
+             (同一 block 内像素要么全训练要么全测试，避免同块泄漏)
 
 返回 (train_idx, test_idx)，都是一维 int 数组，
 索引与 features.load_dataset() 中的 X / y 一致 (row-major)。
@@ -27,9 +29,13 @@ def split_random(n_pixels, seed=RANDOM_SEED, test_size=TEST_SIZE):
 def split_block(shape, block_size=BLOCK_SIZE, seed=RANDOM_SEED):
     """
     把 (H, W) 切成 block_size x block_size 的方格，
-    把每个方格整体分给训练或测试 (60/40)。
-    这样测试集像素与训练集像素至少隔 block_size 像素，
-    切断了空间相邻带来的数据泄漏。
+    把每个方格整体随机分配给训练或测试 (60/40)。
+
+    这只保证 train_blocks ∩ test_blocks = ∅，
+    不保证测试像素到训练像素的距离 >= block_size——
+    相邻 block 一个分到 train、一个分到 test 时，边界两侧的像素仍可能挨着。
+    它显著降低了 random split 中"测试像素紧贴训练像素"的近邻泄漏，
+    但没有完全消除空间自相关。
     """
     h, w = shape
     n_block_y = (h + block_size - 1) // block_size

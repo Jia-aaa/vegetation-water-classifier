@@ -1,6 +1,6 @@
 """
-特征工程：从 scene.tif 读 4 波段，并派生 NDVI / NDWI，
-生成像素级特征矩阵 X 和标签向量 y。
+特征工程：从 scene.tif 读 4 波段，派生 NDVI / NDWI / MNDWI，
+生成像素级特征矩阵 X (7 维) 和标签向量 y。
 
 返回的 X / y 是按行优先 (row-major) 展开的，
 形状分别是 (H*W, n_features) 与 (H*W,)，

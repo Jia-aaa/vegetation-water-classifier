@@ -38,7 +38,10 @@
   1. `train_blocks ∩ test_blocks = ∅`（block 级互不相交）
   2. train / test 像素集合互不相交
   3. test 像素到最近 train 像素的距离分布：random 切分下 ~96% 的 test 像素紧贴 train 像素（≤1 px），block 切分下只有 block 边界上的少量像素紧贴
-- 结论：block 切分**结构上不可能泄漏**；random 切分**结构上一定泄漏**。
+- 结论：block 切分**避免了同一 block 同时出现在 train/test**（同块泄漏）；
+  random 切分**结构上一定有近邻泄漏**——97.28% 测试像素与训练像素相距 ≤ 1 px。
+  注意：block 切分**没有完全消除空间自相关**（边界处仍有少量近邻），
+  但显著降低了 random split 中"测试像素紧贴训练像素"的风险。
 
 ### 4.2 在本数据集上两种切分结果对比
 

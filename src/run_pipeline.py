@@ -1,12 +1,14 @@
 """
 主流水线：
 
-1. 读 scene.tif + labels.tif，构造 6 维特征 (4 波段 + NDVI + NDWI)。
+1. 读 scene.tif + labels.tif，构造 7 维特征：
+   4 个原始波段 Red/NIR/Green/SWIR + NDVI + NDWI + MNDWI。
 2. 用两种切分跑同一个 RandomForest：
      - random : 像素随机 60/40
-     - block  : 32x32 空间棋盘格，60/40 按 block 切
-3. 在测试集上算 accuracy / 混淆矩阵 / per-class P/R/F1 / macro F1。
-4. 用 block 切分训练的模型给整景做预测，输出 prediction.tif + 可视化。
+     - block  : 32x32 空间区块，60/40 按 block 整体切
+3. 在测试集上算 accuracy / balanced accuracy / 混淆矩阵 / per-class P/R/F1 / macro F1。
+4. 分别用 random 模型和 block 模型给整景做预测，
+   输出 prediction_random.tif / prediction_spatial.tif + 三栏可视化。
 5. 报告写入 outputs/metrics.json + outputs/report.txt。
 """
 from pathlib import Path
@@ -26,7 +28,11 @@ from splits import split_random, split_block
 from evaluation import majority_baseline, evaluate, format_report, CLASS_NAMES
 
 
-OUTPUT_DIR = Path("outputs")
+ROOT = Path(__file__).resolve().parents[1]
+DATA_DIR = ROOT / "data"
+OUTPUT_DIR = ROOT / "outputs"
+SCENE_PATH = DATA_DIR / "scene.tif"
+LABELS_PATH = DATA_DIR / "labels.tif"
 
 RF_PARAMS = dict(
     n_estimators=200,
@@ -104,14 +110,14 @@ def save_visualization(pred_random, pred_block, labels, shape, out_path):
 def main():
     print("=== Vegetation / Water Classifier ===")
 
-    if not Path("data/scene.tif").exists() or not Path("data/labels.tif").exists():
-        print("ERROR: data/scene.tif or data/labels.tif missing.")
-        print("Please run from project root with both files in data/.")
+    if not SCENE_PATH.exists() or not LABELS_PATH.exists():
+        print(f"ERROR: missing input file ({SCENE_PATH} / {LABELS_PATH}).")
+        print("Place scene.tif and labels.tif into data/ before running.")
         sys.exit(2)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    ds = load_dataset()
+    ds = load_dataset(SCENE_PATH, LABELS_PATH)
     X, y, shape, profile = ds["X"], ds["y"], ds["shape"], ds["profile"]
     print(f"feature names: {FEATURE_NAMES}")
     print(f"X shape: {X.shape}, y shape: {y.shape}, image shape: {shape}")
@@ -140,7 +146,7 @@ def main():
     print(f"prediction (block split) raster : {pred_spatial_path}")
 
     vis_path = OUTPUT_DIR / "preview.png"
-    with rasterio.open("data/labels.tif") as src:
+    with rasterio.open(LABELS_PATH) as src:
         labels_2d = src.read(1)
     save_visualization(pred_full_random, pred_full_block, labels_2d, shape, vis_path)
     print(f"prediction preview: {vis_path}")
@@ -184,7 +190,7 @@ def main():
     report_lines.append("")
     report_lines.append(format_report("Random split (60/40 over pixels)", m_r, b_r))
     report_lines.append("")
-    report_lines.append(format_report("Block split (32x32 checkerboard, 60/40 over blocks)", m_b, b_b))
+    report_lines.append(format_report("Block split (32x32 blocks, 60/40 over blocks)", m_b, b_b))
     report_lines.append("")
     delta_acc = m_r["accuracy"] - m_b["accuracy"]
     delta_water_recall = (
